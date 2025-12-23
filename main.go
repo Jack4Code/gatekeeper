@@ -16,9 +16,13 @@ import (
 )
 
 type AuthService struct {
-	db       *sql.DB
-	userRepo *models.UserRepository
-	config   Config
+	db                 *sql.DB
+	userRepo           *models.UserRepository
+	roleRepo           *models.RoleRepository
+	permissionRepo     *models.PermissionRepository
+	userRoleRepo       *models.UserRoleRepository
+	rolePermissionRepo *models.RolePermissionRepository
+	config             Config
 }
 
 type Config struct {
@@ -67,15 +71,25 @@ func NewAuthService(cfg Config) (*AuthService, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	return &AuthService{
-		db:       db,
-		userRepo: models.NewUserRepository(db),
-		config:   cfg,
+		db:                 db,
+		userRepo:           models.NewUserRepository(db),
+		roleRepo:           models.NewRoleRepository(db),
+		permissionRepo:     models.NewPermissionRepository(db),
+		userRoleRepo:       models.NewUserRoleRepository(db),
+		rolePermissionRepo: models.NewRolePermissionRepository(db),
+		config:             cfg,
 	}, nil
 }
 
 func (s *AuthService) OnStart(ctx context.Context) error {
 	log.Println("Gatekeeper starting...")
 	log.Println("Database connection established")
+
+	// Bootstrap admin user if configured
+	if err := BootstrapAdmin(s); err != nil {
+		log.Printf("Warning: Bootstrap admin failed: %v", err)
+	}
+
 	return nil
 }
 
@@ -88,8 +102,11 @@ func (s *AuthService) OnStop(ctx context.Context) error {
 }
 
 func (s *AuthService) Routes() []bedrock.Route {
-	// Create auth middleware
-	authMiddleware := bedrock.RequireAuth(s.config.JWTSecret)
+	// Create auth middleware that includes roles and permissions
+	authMiddleware := RequireAuthWithRoles(s.config.JWTSecret)
+
+	// Admin-only middleware (requires admin role)
+	adminMiddleware := RequireRole("admin")
 
 	return []bedrock.Route{
 		// Public routes
@@ -122,6 +139,104 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Path:       "/api/users/me",
 			Handler:    s.DeleteCurrentUser,
 			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+
+		// Role management endpoints (admin only)
+		{
+			Method:     "POST",
+			Path:       "/api/v1/roles",
+			Handler:    s.CreateRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "GET",
+			Path:       "/api/v1/roles",
+			Handler:    s.ListRoles,
+			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+		{
+			Method:     "GET",
+			Path:       "/api/v1/roles/{id}",
+			Handler:    s.GetRole,
+			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+		{
+			Method:     "PUT",
+			Path:       "/api/v1/roles/{id}",
+			Handler:    s.UpdateRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/api/v1/roles/{id}",
+			Handler:    s.DeleteRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+
+		// Permission management endpoints (admin only)
+		{
+			Method:     "POST",
+			Path:       "/api/v1/permissions",
+			Handler:    s.CreatePermission,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "GET",
+			Path:       "/api/v1/permissions",
+			Handler:    s.ListPermissions,
+			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+		{
+			Method:     "GET",
+			Path:       "/api/v1/permissions/{id}",
+			Handler:    s.GetPermission,
+			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/api/v1/permissions/{id}",
+			Handler:    s.DeletePermission,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+
+		// User-role assignment endpoints (admin only)
+		{
+			Method:     "POST",
+			Path:       "/api/v1/users/{id}/roles",
+			Handler:    s.AssignRoleToUser,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/api/v1/users/{id}/roles/{roleId}",
+			Handler:    s.RemoveRoleFromUser,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "GET",
+			Path:       "/api/v1/users/{id}/roles",
+			Handler:    s.GetUserRoles,
+			Middleware: []bedrock.Middleware{authMiddleware},
+		},
+
+		// Role-permission assignment endpoints (admin only)
+		{
+			Method:     "POST",
+			Path:       "/api/v1/roles/{id}/permissions",
+			Handler:    s.AssignPermissionToRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "POST",
+			Path:       "/api/v1/roles/{id}/permissions/batch",
+			Handler:    s.AssignMultiplePermissionsToRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/api/v1/roles/{id}/permissions/{permissionId}",
+			Handler:    s.RemovePermissionFromRole,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
 		},
 	}
 }
@@ -173,8 +288,25 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 		})
 	}
 
-	// Generate JWT
-	token, err := bedrock.GenerateJWT(user.ID, s.config.JWTSecret, s.config.JWTExpiration)
+	// Assign default 'user' role to new users
+	defaultRole, err := s.roleRepo.GetByName("user")
+	if err == nil {
+		userRole := &models.UserRole{
+			UserID: user.ID,
+			RoleID: defaultRole.ID,
+		}
+		if err := s.userRoleRepo.Assign(userRole); err != nil {
+			log.Printf("Warning: Failed to assign default role to user: %v", err)
+		}
+	} else {
+		log.Printf("Warning: Default 'user' role not found: %v", err)
+	}
+
+	// Get user roles and permissions for JWT
+	roles, permissions := s.getUserRolesAndPermissions(user.ID)
+
+	// Generate JWT with roles and permissions
+	token, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		return bedrock.JSON(500, map[string]string{
@@ -225,8 +357,11 @@ func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Respon
 		})
 	}
 
-	// Generate JWT
-	token, err := bedrock.GenerateJWT(user.ID, s.config.JWTSecret, s.config.JWTExpiration)
+	// Get user roles and permissions for JWT
+	roles, permissions := s.getUserRolesAndPermissions(user.ID)
+
+	// Generate JWT with roles and permissions
+	token, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		return bedrock.JSON(500, map[string]string{
@@ -330,6 +465,38 @@ func (s *AuthService) DeleteCurrentUser(ctx context.Context, r *http.Request) be
 	return bedrock.JSON(200, map[string]string{
 		"message": "account deleted successfully",
 	})
+}
+
+// Helper functions
+
+// getUserRolesAndPermissions fetches and formats user roles and permissions for JWT
+func (s *AuthService) getUserRolesAndPermissions(userID string) ([]string, []string) {
+	var roleNames []string
+	var permissionStrings []string
+
+	// Get user roles
+	roles, err := s.userRoleRepo.GetUserRoles(userID)
+	if err != nil {
+		log.Printf("Warning: Failed to get user roles: %v", err)
+		return roleNames, permissionStrings
+	}
+
+	for _, role := range roles {
+		roleNames = append(roleNames, role.Name)
+	}
+
+	// Get user permissions (flattened from all roles)
+	permissions, err := s.userRoleRepo.GetUserPermissions(userID)
+	if err != nil {
+		log.Printf("Warning: Failed to get user permissions: %v", err)
+		return roleNames, permissionStrings
+	}
+
+	for _, perm := range permissions {
+		permissionStrings = append(permissionStrings, models.FormatPermission(perm.Resource, perm.Action))
+	}
+
+	return roleNames, permissionStrings
 }
 
 // Validation helpers
