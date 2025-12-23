@@ -377,7 +377,7 @@ func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Respon
 
 // GetCurrentUser returns the authenticated user's information
 func (s *AuthService) GetCurrentUser(ctx context.Context, r *http.Request) bedrock.Response {
-	userID, ok := bedrock.GetUserID(ctx)
+	userID, ok := GetUserID(ctx)
 	if !ok {
 		return bedrock.JSON(500, map[string]string{
 			"error": "user ID not found in context",
@@ -402,7 +402,7 @@ func (s *AuthService) GetCurrentUser(ctx context.Context, r *http.Request) bedro
 
 // UpdateCurrentUser updates the authenticated user's information
 func (s *AuthService) UpdateCurrentUser(ctx context.Context, r *http.Request) bedrock.Response {
-	userID, ok := bedrock.GetUserID(ctx)
+	userID, ok := GetUserID(ctx)
 	if !ok {
 		return bedrock.JSON(500, map[string]string{
 			"error": "user ID not found in context",
@@ -442,7 +442,7 @@ func (s *AuthService) UpdateCurrentUser(ctx context.Context, r *http.Request) be
 
 // DeleteCurrentUser deletes the authenticated user's account
 func (s *AuthService) DeleteCurrentUser(ctx context.Context, r *http.Request) bedrock.Response {
-	userID, ok := bedrock.GetUserID(ctx)
+	userID, ok := GetUserID(ctx)
 	if !ok {
 		return bedrock.JSON(500, map[string]string{
 			"error": "user ID not found in context",

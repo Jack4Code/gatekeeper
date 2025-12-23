@@ -12,6 +12,7 @@ import (
 type contextKey string
 
 const (
+	contextKeyUserID      contextKey = "user_id"
 	contextKeyRoles       contextKey = "roles"
 	contextKeyPermissions contextKey = "permissions"
 	contextKeyEmail       contextKey = "email"
@@ -48,7 +49,7 @@ func RequireAuthWithRoles(secret string) bedrock.Middleware {
 			}
 
 			// Add user data to context
-			ctx = context.WithValue(ctx, bedrock.ContextKeyUserID, claims.UserID)
+			ctx = context.WithValue(ctx, contextKeyUserID, claims.UserID)
 			ctx = context.WithValue(ctx, contextKeyEmail, claims.Email)
 			ctx = context.WithValue(ctx, contextKeyRoles, claims.Roles)
 			ctx = context.WithValue(ctx, contextKeyPermissions, claims.Permissions)
@@ -56,6 +57,12 @@ func RequireAuthWithRoles(secret string) bedrock.Middleware {
 			return next(ctx, r)
 		}
 	}
+}
+
+// GetUserID retrieves user ID from context
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(contextKeyUserID).(string)
+	return userID, ok
 }
 
 // GetRoles retrieves roles from context

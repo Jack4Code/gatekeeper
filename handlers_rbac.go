@@ -367,7 +367,7 @@ func (s *AuthService) AssignRoleToUser(ctx context.Context, r *http.Request) bed
 	}
 
 	// Get the ID of the user performing the assignment
-	assignedBy, _ := bedrock.GetUserID(ctx)
+	assignedBy, _ := GetUserID(ctx)
 
 	userRole := &models.UserRole{
 		UserID:     userID,
