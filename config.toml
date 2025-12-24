@@ -1,3 +1,18 @@
-http_port = "7070"
-health_port = "7171"
+# Bedrock framework configuration
+[bedrock]
+http_port = 8080
+health_port = 9090
 log_level = "info"
+environment = "development"
+
+# Gatekeeper application configuration
+# Note: Sensitive values like JWT_SECRET and DATABASE_URL should be set via environment variables
+# jwt_secret = ""  # Set via JWT_SECRET env var
+# database_url = ""  # Set via DATABASE_URL env var
+jwt_expiration = 86400000000000  # 24 hours in nanoseconds (time.Duration)
+min_password_len = 8
+
+# Bootstrap admin user (optional - can also be set via environment variables)
+# bootstrap_admin_email = "admin@example.com"
+# bootstrap_admin_password = "changeme"
+# bootstrap_admin_name = "Administrator"

@@ -19,8 +19,8 @@ import (
 
 // BootstrapAdmin creates an initial admin user if none exists
 func BootstrapAdmin(service *AuthService) error {
-	// Check if BOOTSTRAP_ADMIN_EMAIL environment variable is set
-	adminEmail := os.Getenv("BOOTSTRAP_ADMIN_EMAIL")
+	// Check if bootstrap admin email is configured
+	adminEmail := service.config.BootstrapAdminEmail
 	if adminEmail == "" {
 		log.Println("BOOTSTRAP_ADMIN_EMAIL not set, skipping admin bootstrap")
 		return nil
@@ -33,15 +33,15 @@ func BootstrapAdmin(service *AuthService) error {
 		return nil
 	}
 
-	// Get password from environment or prompt
-	adminPassword := os.Getenv("BOOTSTRAP_ADMIN_PASSWORD")
+	// Get password from config
+	adminPassword := service.config.BootstrapAdminPassword
 	if adminPassword == "" {
 		log.Println("BOOTSTRAP_ADMIN_PASSWORD not set, skipping admin bootstrap")
 		log.Println("To create an admin user, set both BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD environment variables")
 		return nil
 	}
 
-	adminName := os.Getenv("BOOTSTRAP_ADMIN_NAME")
+	adminName := service.config.BootstrapAdminName
 	if adminName == "" {
 		adminName = "Admin"
 	}

@@ -6,11 +6,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"time"
 
 	"github.com/Jack4Code/bedrock"
+	"github.com/Jack4Code/bedrock/config"
 	"github.com/Jack4Code/gatekeeper/models"
 	_ "github.com/lib/pq"
 )
@@ -26,10 +26,17 @@ type AuthService struct {
 }
 
 type Config struct {
-	JWTSecret      string
-	JWTExpiration  time.Duration
-	DatabaseURL    string
-	MinPasswordLen int
+	Bedrock config.BaseConfig `toml:"bedrock"`
+
+	JWTSecret      string        `toml:"jwt_secret" env:"JWT_SECRET"`
+	JWTExpiration  time.Duration `toml:"jwt_expiration" env:"JWT_EXPIRATION"`
+	DatabaseURL    string        `toml:"database_url" env:"DATABASE_URL"`
+	MinPasswordLen int           `toml:"min_password_len" env:"MIN_PASSWORD_LEN"`
+
+	// Bootstrap admin settings
+	BootstrapAdminEmail    string `toml:"bootstrap_admin_email" env:"BOOTSTRAP_ADMIN_EMAIL"`
+	BootstrapAdminPassword string `toml:"bootstrap_admin_password" env:"BOOTSTRAP_ADMIN_PASSWORD"`
+	BootstrapAdminName     string `toml:"bootstrap_admin_name" env:"BOOTSTRAP_ADMIN_NAME"`
 }
 
 // Request/Response types
@@ -523,40 +530,37 @@ func (s *AuthService) validateRegisterRequest(req *RegisterRequest) error {
 }
 
 func main() {
-	// Load Bedrock config
-	bedrockCfg := bedrock.LoadConfig()
+	// Load configuration from config.toml with environment variable overrides
+	var cfg Config
+	loader := config.NewLoader()
+	if err := loader.Load("config.toml", &cfg); err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Load auth service config from environment
-	authCfg := Config{
-		JWTSecret:      getEnv("JWT_SECRET", ""),
-		JWTExpiration:  24 * time.Hour,
-		DatabaseURL:    getEnv("DATABASE_URL", ""),
-		MinPasswordLen: 8,
+	// Set defaults for app-specific config
+	if cfg.JWTExpiration == 0 {
+		cfg.JWTExpiration = 24 * time.Hour
+	}
+	if cfg.MinPasswordLen == 0 {
+		cfg.MinPasswordLen = 8
 	}
 
 	// Validate required config
-	if authCfg.JWTSecret == "" {
+	if cfg.JWTSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
-	if authCfg.DatabaseURL == "" {
+	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
 	// Create service
-	service, err := NewAuthService(authCfg)
+	service, err := NewAuthService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create gatekeeper: %v", err)
 	}
 
-	// Run server
-	if err := bedrock.Run(service, bedrockCfg); err != nil {
+	// Run server with bedrock config
+	if err := bedrock.Run(service, cfg.Bedrock); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
