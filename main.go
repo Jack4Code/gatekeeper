@@ -6,9 +6,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/Jack4Code/bedrock"
 	"github.com/Jack4Code/bedrock/config"
 	"github.com/Jack4Code/gatekeeper/models"
@@ -532,9 +534,19 @@ func (s *AuthService) validateRegisterRequest(req *RegisterRequest) error {
 func main() {
 	// Load configuration from config.toml with environment variable overrides
 	var cfg Config
-	loader := config.NewLoader()
-	if err := loader.Load("config.toml", &cfg); err != nil {
+	loader := config.NewLoader("./config.toml")
+	if err := loader.Load(&cfg); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	log.Printf("Loaded config: %+v", cfg)
+	log.Printf("Env JWT_SECRET=%q DATABASE_URL=%q", os.Getenv("JWT_SECRET"), os.Getenv("DATABASE_URL"))
+
+	// Also decode TOML into a raw map to inspect what keys are present
+	var raw map[string]interface{}
+	if _, err := toml.DecodeFile("./config.toml", &raw); err != nil {
+		log.Printf("toml decode failed: %v", err)
+	} else {
+		log.Printf("TOML raw keys: %+v", raw)
 	}
 
 	// Set defaults for app-specific config
@@ -544,8 +556,6 @@ func main() {
 	if cfg.MinPasswordLen == 0 {
 		cfg.MinPasswordLen = 8
 	}
-
-	// Validate required config
 	if cfg.JWTSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
