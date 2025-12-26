@@ -66,6 +66,43 @@ gatekeeper/
 
 ### 2. Setup Database
 
+# Create a Docker network so gatekeeper can communicate with the database
+docker network create gatekeeper-net
+
+# Run MongoDB in a standalone container
+docker run -d \
+  --name gatekeeper-mongo \
+  --network gatekeeper-net \
+  -p 27017:27017 \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD=password \
+  -v gatekeeper-mongo-data:/data/db \
+  mongo:latest
+
+# Verify it's running
+docker ps | grep gatekeeper-mongo
+```
+
+Now when you run gatekeeper locally (via `go run` or your IDE's debugger), you'll need to update your connection string to point to `localhost:27017` instead of the service name used in docker-compose.
+
+Your MongoDB connection string should be:
+```
+mongodb://admin:password@localhost:27017
+
+If you need to start/stop the database:
+```bash
+docker stop gatekeeper-mongo
+docker start gatekeeper-mongo
+```
+
+To remove it when done
+```bash
+docker stop gatekeeper-mongo
+docker rm gatekeeper-mongo
+docker volume rm gatekeeper-mongo-data  # if you want to wipe data
+docker network rm gatekeeper-net
+```
+
 ```bash
 # Create database
 createdb authdb
