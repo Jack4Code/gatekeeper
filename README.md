@@ -49,8 +49,11 @@ gatekeeper/
 │   ├── role_permission.go            # Role-permission assignment model & repository
 │   └── helpers.go                    # Shared helper functions
 ├── migrations/
-│   ├── 001_create_users_table.sql    # User schema
-│   └── 002_create_rbac_tables.sql    # RBAC schema with seed data
+│   └── postgres/                      # PostgreSQL migrations (managed by bedrock-migrate)
+│       ├── 20240101000001_create_users_table.up.sql
+│       ├── 20240101000001_create_users_table.down.sql
+│       ├── 20240101000002_create_rbac_tables.up.sql
+│       └── 20240101000002_create_rbac_tables.down.sql
 ├── config.toml                       # Bedrock configuration
 ├── .env.example                      # Environment variables template
 ├── go.mod                            # Dependencies
@@ -95,9 +98,9 @@ CREATE USER authuser WITH PASSWORD 'authpass';
 GRANT ALL PRIVILEGES ON DATABASE authdb TO authuser;
 \q
 
-# Run migrations (in order)
-psql -d authdb -U authuser -f migrations/001_create_users_table.sql
-psql -d authdb -U authuser -f migrations/002_create_rbac_tables.sql
+# Run migrations using bedrock-migrate
+export DATABASE_URL=postgres://authuser:authpass@localhost/authdb?sslmode=disable
+go run . migrate up --type postgres
 ```
 
 ### 3. Configure Environment
@@ -135,8 +138,10 @@ go mod tidy
 # Load environment variables
 export $(cat .env | xargs)
 
-# Run
-go run main.go
+# Run the service (default command)
+go run .
+# Or explicitly use the serve command
+go run . serve
 ```
 
 The service will start on:
@@ -619,6 +624,100 @@ health_port = "9090"
 log_level = "info"
 ```
 
+## Database Migrations
+
+Gatekeeper uses [bedrock-migrate](https://github.com/Jack4Code/bedrock-migrate) for database migration management. Migrations are version-controlled and support both up (apply) and down (rollback) operations.
+
+### Migration Commands
+
+The migration system is integrated into the Gatekeeper CLI. All commands require the `DATABASE_URL` environment variable to be set.
+
+#### Check Migration Status
+
+```bash
+# View which migrations have been applied
+go run . migrate status --type postgres
+```
+
+#### Apply Pending Migrations
+
+```bash
+# Run all pending migrations
+go run . migrate up --type postgres
+```
+
+#### Rollback Last Migration
+
+```bash
+# Rollback the most recently applied migration
+go run . migrate down --type postgres
+```
+
+#### Create a New Migration
+
+```bash
+# Create a new migration with up/down SQL files
+go run . migrate create add_user_preferences --type postgres
+```
+
+This creates two files in `migrations/postgres/`:
+- `<timestamp>_add_user_preferences.up.sql` - Forward migration
+- `<timestamp>_add_user_preferences.down.sql` - Rollback migration
+
+#### Check Migration Version
+
+```bash
+# Show the current migration version
+go run . migrate version --type postgres
+```
+
+### Migration Workflow
+
+1. **Create migration**: `go run . migrate create <name> --type postgres`
+2. **Edit SQL files**: Add your schema changes to the `.up.sql` and `.down.sql` files
+3. **Test locally**: Run `go run . migrate up --type postgres` to apply
+4. **Test rollback**: Run `go run . migrate down --type postgres` to verify rollback works
+5. **Commit**: Add migration files to version control
+6. **Deploy**: Run migrations in production before deploying new code
+
+### Using Make Targets
+
+For convenience, Makefile targets are available:
+
+```bash
+# Apply pending migrations
+make db-migrate-up
+
+# Rollback last migration
+make db-migrate-down
+
+# Check migration status
+make db-migrate-status
+
+# Create new migration
+make db-migrate-create NAME=add_user_preferences
+
+# Reset database (WARNING: destroys all data)
+make db-reset
+```
+
+### Migration Best Practices
+
+- **Always test rollbacks**: Ensure your `.down.sql` can properly undo the `.up.sql` changes
+- **One logical change per migration**: Don't mix unrelated schema changes
+- **Use transactions**: Migrations run in transactions by default (PostgreSQL)
+- **Don't modify existing migrations**: Create new migrations to fix issues
+- **Coordinate with code**: Deploy migrations before code that depends on them
+
+### Migration Storage
+
+Migrations are tracked in the `schema_migrations` table in your database:
+
+```sql
+-- View applied migrations
+SELECT * FROM schema_migrations ORDER BY version;
+```
+
 ## Database Schema
 
 ```sql
@@ -778,20 +877,31 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 COPY --from=builder /app/gatekeeper .
+COPY --from=builder /app/migrations ./migrations
 COPY config.toml .
 EXPOSE 8080 9090
-CMD ["./gatekeeper"]
+CMD ["./gatekeeper", "serve"]
 ```
 
 ```bash
 # Build
 docker build -t gatekeeper .
 
-# Run
+# Run migrations (one-time setup or when deploying new migrations)
+docker run --rm \
+  -e DATABASE_URL="postgres://..." \
+  gatekeeper migrate up --type postgres
+
+# Run the service
 docker run -p 8080:8080 -p 9090:9090 \
   -e JWT_SECRET="your-secret" \
   -e DATABASE_URL="postgres://..." \
   gatekeeper
+
+# Or use docker-compose
+docker-compose up -d
+# Then run migrations
+docker-compose exec gatekeeper ./gatekeeper migrate up --type postgres
 ```
 
 ### Kubernetes Deployment
