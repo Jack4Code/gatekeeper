@@ -1,4 +1,3 @@
--- migrations/002_create_rbac_tables.sql
 -- Create RBAC (Role-Based Access Control) tables
 
 -- Create roles table

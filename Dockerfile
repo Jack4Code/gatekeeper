@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gatekeeper main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gatekeeper .
 
 # Final stage
 FROM alpine:latest
@@ -24,12 +24,13 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-# Copy binary from builder
+# Copy binary, config, and migrations from builder
 COPY --from=builder /app/gatekeeper .
 COPY --from=builder /app/config.toml .
+COPY --from=builder /app/migrations ./migrations
 
 # Expose ports
 EXPOSE 8080 9090
 
-# Run the application
-CMD ["./gatekeeper"]
+# Run the application (defaults to serve)
+CMD ["./gatekeeper", "serve"]

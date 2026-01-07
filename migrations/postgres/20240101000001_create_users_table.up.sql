@@ -1,4 +1,3 @@
--- migrations/001_create_users_table.sql
 -- Create users table for authentication
 
 CREATE TABLE IF NOT EXISTS users (
@@ -13,7 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Index for fast email lookups (used in login)
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- Create updated_at trigger -- for now.. probably will remove this
+-- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -22,7 +21,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_users_updated_at 
-    BEFORE UPDATE ON users 
-    FOR EACH ROW 
+CREATE TRIGGER update_users_updated_at
+    BEFORE UPDATE ON users
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

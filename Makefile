@@ -8,11 +8,11 @@ help: ## Show this help message
 
 build: ## Build the gatekeeper binary
 	@echo "Building gatekeeper..."
-	@go build -o gatekeeper main.go
+	@go build -o gatekeeper .
 
 run: ## Run gatekeeper (requires .env file)
 	@echo "Starting gatekeeper..."
-	@export $$(cat .env | xargs) && go run main.go
+	@export $$(cat .env | xargs) && go run . serve
 
 test: ## Run tests
 	@echo "Running tests..."
@@ -33,15 +33,31 @@ db-setup: ## Create database and user (requires psql)
 	@psql -d authdb -c "CREATE USER authuser WITH PASSWORD 'authpass';" || echo "User may already exist"
 	@psql -d authdb -c "GRANT ALL PRIVILEGES ON DATABASE authdb TO authuser;"
 
-db-migrate: ## Run database migrations
+db-migrate-up: ## Run pending database migrations
 	@echo "Running migrations..."
-	@psql -d authdb -U authuser -f migrations/001_create_users_table.sql
+	@export $$(cat .env | xargs) && go run . migrate up --type postgres
+
+db-migrate-down: ## Rollback last migration
+	@echo "Rolling back migration..."
+	@export $$(cat .env | xargs) && go run . migrate down --type postgres
+
+db-migrate-status: ## Show migration status
+	@echo "Checking migration status..."
+	@export $$(cat .env | xargs) && go run . migrate status --type postgres
+
+db-migrate-create: ## Create a new migration (usage: make db-migrate-create NAME=my_migration)
+	@if [ -z "$(NAME)" ]; then \
+		echo "Error: NAME is required. Usage: make db-migrate-create NAME=my_migration"; \
+		exit 1; \
+	fi
+	@echo "Creating migration: $(NAME)"
+	@go run . migrate create $(NAME) --type postgres
 
 db-reset: ## Drop and recreate database (WARNING: destroys data)
 	@echo "Resetting database..."
 	@dropdb authdb || true
 	@make db-setup
-	@make db-migrate
+	@make db-migrate-up
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."

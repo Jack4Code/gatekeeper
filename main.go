@@ -12,9 +12,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/Jack4Code/bedrock"
+	migrate "github.com/Jack4Code/bedrock-migrate/pkg/commands"
 	"github.com/Jack4Code/bedrock/config"
 	"github.com/Jack4Code/gatekeeper/models"
 	_ "github.com/lib/pq"
+	"github.com/spf13/cobra"
 )
 
 type AuthService struct {
@@ -532,6 +534,35 @@ func (s *AuthService) validateRegisterRequest(req *RegisterRequest) error {
 }
 
 func main() {
+	rootCmd := &cobra.Command{
+		Use:   "gatekeeper",
+		Short: "Gatekeeper Authentication Service",
+		Long:  "Gatekeeper is a modern authentication and authorization service with RBAC support",
+		Run: func(cmd *cobra.Command, args []string) {
+			// Default to serve if no subcommand is provided
+			serveCommand(cmd, args)
+		},
+	}
+
+	// Add serve subcommand
+	serveCmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the Gatekeeper service",
+		Long:  "Start the Gatekeeper HTTP service with authentication and RBAC endpoints",
+		Run:   serveCommand,
+	}
+	rootCmd.AddCommand(serveCmd)
+
+	// Add migrate subcommand with all bedrock-migrate commands
+	rootCmd.AddCommand(migrate.MigrateCommand())
+
+	// Execute root command
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func serveCommand(cmd *cobra.Command, args []string) {
 	// Load configuration from config.toml with environment variable overrides
 	var cfg Config
 	loader := config.NewLoader("./config.toml")
