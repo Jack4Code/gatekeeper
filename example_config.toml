@@ -1,0 +1,26 @@
+# Example Gatekeeper configuration (do not commit secrets)
+# Use this as a template; set sensitive values via environment variables instead of hardcoding.
+
+# Example DATABASE_URL: postgres://user:pass@localhost:5432/db?sslmode=disable
+# Set via DATABASE_URL env var
+database_url = ""  # set via DATABASE_URL env var
+
+# Set via JWT_SECRET env var
+jwt_secret = ""
+
+# Token lifetime (time.Duration string)
+jwt_expiration = "24h"
+
+# Minimum password length
+min_password_len = 8
+
+# Bootstrap admin user (optional - set via env or change locally)
+bootstrap_admin_email = "admin@example.com"
+bootstrap_admin_password = "changeme"
+bootstrap_admin_name = "Administrator"
+
+[bedrock]
+http_port = 8080
+health_port = 8080
+log_level = "info"
+environment = "development"
