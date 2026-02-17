@@ -15,6 +15,7 @@ import (
 	migrate "github.com/Jack4Code/bedrock-migrate/pkg/commands"
 	"github.com/Jack4Code/bedrock/config"
 	"github.com/Jack4Code/gatekeeper/models"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
 )
@@ -26,16 +27,19 @@ type AuthService struct {
 	permissionRepo     *models.PermissionRepository
 	userRoleRepo       *models.UserRoleRepository
 	rolePermissionRepo *models.RolePermissionRepository
+	refreshTokenRepo   *models.RefreshTokenRepository
 	config             Config
 }
 
 type Config struct {
 	Bedrock config.BaseConfig `toml:"bedrock"`
 
-	JWTSecret      string        `toml:"jwt_secret" env:"JWT_SECRET"`
-	JWTExpiration  time.Duration `toml:"jwt_expiration" env:"JWT_EXPIRATION"`
-	DatabaseURL    string        `toml:"database_url" env:"DATABASE_URL"`
-	MinPasswordLen int           `toml:"min_password_len" env:"MIN_PASSWORD_LEN"`
+	JWTSecret              string        `toml:"jwt_secret" env:"JWT_SECRET"`
+	JWTExpiration          time.Duration `toml:"jwt_expiration" env:"JWT_EXPIRATION"`
+	IDTokenExpiration      time.Duration `toml:"id_token_expiration" env:"ID_TOKEN_EXPIRATION"`
+	RefreshTokenExpiration time.Duration `toml:"refresh_token_expiration" env:"REFRESH_TOKEN_EXPIRATION"`
+	DatabaseURL            string        `toml:"database_url" env:"DATABASE_URL"`
+	MinPasswordLen         int           `toml:"min_password_len" env:"MIN_PASSWORD_LEN"`
 
 	// Bootstrap admin settings
 	BootstrapAdminEmail    string `toml:"bootstrap_admin_email" env:"BOOTSTRAP_ADMIN_EMAIL"`
@@ -60,8 +64,18 @@ type UpdateUserRequest struct {
 }
 
 type AuthResponse struct {
-	Token string       `json:"token"`
-	User  *models.User `json:"user"`
+	Token        string       `json:"token"`
+	IDToken      string       `json:"id_token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         *models.User `json:"user"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 func NewAuthService(cfg Config) (*AuthService, error) {
@@ -88,6 +102,7 @@ func NewAuthService(cfg Config) (*AuthService, error) {
 		permissionRepo:     models.NewPermissionRepository(db),
 		userRoleRepo:       models.NewUserRoleRepository(db),
 		rolePermissionRepo: models.NewRolePermissionRepository(db),
+		refreshTokenRepo:   models.NewRefreshTokenRepository(db),
 		config:             cfg,
 	}, nil
 }
@@ -130,6 +145,16 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Method:  "POST",
 			Path:    "/api/login",
 			Handler: s.Login,
+		},
+		{
+			Method:  "POST",
+			Path:    "/api/refresh",
+			Handler: s.Refresh,
+		},
+		{
+			Method:  "POST",
+			Path:    "/api/logout",
+			Handler: s.Logout,
 		},
 
 		// Protected routes (require authentication)
@@ -313,22 +338,16 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 		log.Printf("Warning: Default 'user' role not found: %v", err)
 	}
 
-	// Get user roles and permissions for JWT
-	roles, permissions := s.getUserRolesAndPermissions(user.ID)
-
-	// Generate JWT with roles and permissions
-	token, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	// Issue token pair (access + refresh)
+	resp, err := s.issueTokenPair(user)
 	if err != nil {
-		log.Printf("Failed to generate JWT: %v", err)
+		log.Printf("Failed to issue token pair: %v", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to generate token",
 		})
 	}
 
-	return bedrock.JSON(201, AuthResponse{
-		Token: token,
-		User:  user,
-	})
+	return bedrock.JSON(201, resp)
 }
 
 // Login authenticates a user
@@ -368,22 +387,16 @@ func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Respon
 		})
 	}
 
-	// Get user roles and permissions for JWT
-	roles, permissions := s.getUserRolesAndPermissions(user.ID)
-
-	// Generate JWT with roles and permissions
-	token, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	// Issue token pair (access + refresh)
+	resp, err := s.issueTokenPair(user)
 	if err != nil {
-		log.Printf("Failed to generate JWT: %v", err)
+		log.Printf("Failed to issue token pair: %v", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "login failed",
 		})
 	}
 
-	return bedrock.JSON(200, AuthResponse{
-		Token: token,
-		User:  user,
-	})
+	return bedrock.JSON(200, resp)
 }
 
 // GetCurrentUser returns the authenticated user's information
@@ -475,6 +488,198 @@ func (s *AuthService) DeleteCurrentUser(ctx context.Context, r *http.Request) be
 
 	return bedrock.JSON(200, map[string]string{
 		"message": "account deleted successfully",
+	})
+}
+
+// issueTokenPair generates an access JWT and an opaque refresh token, storing the refresh token hash in the DB.
+func (s *AuthService) issueTokenPair(user *models.User) (*AuthResponse, error) {
+	// Get user roles and permissions for JWT
+	roles, permissions := s.getUserRolesAndPermissions(user.ID)
+
+	// Generate access JWT
+	accessToken, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate ID token
+	idToken, err := GenerateIDToken(user.ID, user.Email, user.Name, s.config.JWTSecret, s.config.IDTokenExpiration)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate opaque refresh token
+	plaintext, hash, err := GenerateRefreshToken()
+	if err != nil {
+		return nil, err
+	}
+
+	// Store refresh token hash in DB with a new family
+	familyID := uuid.New().String()
+	expiresAt := time.Now().Add(s.config.RefreshTokenExpiration)
+	_, err = s.refreshTokenRepo.Create(user.ID, hash, familyID, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthResponse{
+		Token:        accessToken,
+		IDToken:      idToken,
+		RefreshToken: plaintext,
+		User:         user,
+	}, nil
+}
+
+// Refresh validates a refresh token, rotates it, and returns a new token pair
+func (s *AuthService) Refresh(ctx context.Context, r *http.Request) bedrock.Response {
+	var req RefreshRequest
+	if err := bedrock.DecodeJSON(r, &req); err != nil {
+		return bedrock.JSON(400, map[string]string{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.RefreshToken == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "refresh_token is required",
+		})
+	}
+
+	// Look up the token by its hash
+	tokenHash := sha256Hex(req.RefreshToken)
+	storedToken, err := s.refreshTokenRepo.GetByTokenHash(tokenHash)
+	if err != nil {
+		if err == models.ErrRefreshTokenNotFound {
+			return bedrock.JSON(401, map[string]string{
+				"error": "invalid refresh token",
+			})
+		}
+		log.Printf("Database error during refresh: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "refresh failed",
+		})
+	}
+
+	// Reuse detection: if the token has been revoked, revoke the entire family
+	if storedToken.Revoked {
+		log.Printf("Refresh token reuse detected for family %s, revoking entire family", storedToken.FamilyID)
+		if err := s.refreshTokenRepo.RevokeFamily(storedToken.FamilyID); err != nil {
+			log.Printf("Failed to revoke token family: %v", err)
+		}
+		return bedrock.JSON(401, map[string]string{
+			"error": "refresh token reuse detected, all sessions in this family have been revoked",
+		})
+	}
+
+	// Check expiration
+	if time.Now().After(storedToken.ExpiresAt) {
+		return bedrock.JSON(401, map[string]string{
+			"error": "refresh token expired",
+		})
+	}
+
+	// Get the user
+	user, err := s.userRepo.GetByID(storedToken.UserID)
+	if err != nil {
+		log.Printf("User not found during refresh: %v", err)
+		return bedrock.JSON(401, map[string]string{
+			"error": "user not found",
+		})
+	}
+
+	// Get user roles and permissions for new JWT
+	roles, permissions := s.getUserRolesAndPermissions(user.ID)
+
+	// Generate new access JWT
+	accessToken, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	if err != nil {
+		log.Printf("Failed to generate JWT during refresh: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "refresh failed",
+		})
+	}
+
+	// Generate new ID token
+	idToken, err := GenerateIDToken(user.ID, user.Email, user.Name, s.config.JWTSecret, s.config.IDTokenExpiration)
+	if err != nil {
+		log.Printf("Failed to generate ID token during refresh: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "refresh failed",
+		})
+	}
+
+	// Generate new refresh token in the same family
+	newPlaintext, newHash, err := GenerateRefreshToken()
+	if err != nil {
+		log.Printf("Failed to generate refresh token: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "refresh failed",
+		})
+	}
+
+	expiresAt := time.Now().Add(s.config.RefreshTokenExpiration)
+	newToken, err := s.refreshTokenRepo.Create(user.ID, newHash, storedToken.FamilyID, expiresAt)
+	if err != nil {
+		log.Printf("Failed to store new refresh token: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "refresh failed",
+		})
+	}
+
+	// Revoke the old token and link to the new one
+	if err := s.refreshTokenRepo.RevokeByID(storedToken.ID, newToken.ID); err != nil {
+		log.Printf("Failed to revoke old refresh token: %v", err)
+	}
+
+	return bedrock.JSON(200, AuthResponse{
+		Token:        accessToken,
+		IDToken:      idToken,
+		RefreshToken: newPlaintext,
+		User:         user,
+	})
+}
+
+// Logout revokes the refresh token family
+func (s *AuthService) Logout(ctx context.Context, r *http.Request) bedrock.Response {
+	var req LogoutRequest
+	if err := bedrock.DecodeJSON(r, &req); err != nil {
+		return bedrock.JSON(400, map[string]string{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.RefreshToken == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "refresh_token is required",
+		})
+	}
+
+	// Look up the token by its hash
+	tokenHash := sha256Hex(req.RefreshToken)
+	storedToken, err := s.refreshTokenRepo.GetByTokenHash(tokenHash)
+	if err != nil {
+		if err == models.ErrRefreshTokenNotFound {
+			// Token not found — treat as success (idempotent logout)
+			return bedrock.JSON(200, map[string]string{
+				"message": "logged out successfully",
+			})
+		}
+		log.Printf("Database error during logout: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "logout failed",
+		})
+	}
+
+	// Revoke the entire token family
+	if err := s.refreshTokenRepo.RevokeFamily(storedToken.FamilyID); err != nil {
+		log.Printf("Failed to revoke token family during logout: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "logout failed",
+		})
+	}
+
+	return bedrock.JSON(200, map[string]string{
+		"message": "logged out successfully",
 	})
 }
 
@@ -583,6 +788,12 @@ func serveCommand(cmd *cobra.Command, args []string) {
 	// Set defaults for app-specific config
 	if cfg.JWTExpiration == 0 {
 		cfg.JWTExpiration = 24 * time.Hour
+	}
+	if cfg.IDTokenExpiration == 0 {
+		cfg.IDTokenExpiration = cfg.JWTExpiration
+	}
+	if cfg.RefreshTokenExpiration == 0 {
+		cfg.RefreshTokenExpiration = 7 * 24 * time.Hour
 	}
 	if cfg.MinPasswordLen == 0 {
 		cfg.MinPasswordLen = 8

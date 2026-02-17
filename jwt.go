@@ -64,6 +64,34 @@ func ValidateJWTWithRoles(tokenString, secret string) (*CustomClaims, error) {
 	return nil, fmt.Errorf("invalid token")
 }
 
+// IDTokenClaims contains identity-only claims for the ID token
+type IDTokenClaims struct {
+	jwt.RegisteredClaims
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// GenerateIDToken creates a JWT ID token with identity claims (no roles/permissions)
+func GenerateIDToken(userID, email, name, secret string, expiration time.Duration) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("JWT secret cannot be empty")
+	}
+
+	now := time.Now()
+	claims := IDTokenClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiration)),
+		},
+		Email: email,
+		Name:  name,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
 // Helper function to format permissions as "resource:action" strings
 func formatPermissions(permissions []struct{ Resource, Action string }) []string {
 	result := make([]string, len(permissions))
