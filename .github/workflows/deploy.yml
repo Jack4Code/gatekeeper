@@ -37,5 +37,5 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull ghcr.io/jack4code/gatekeeper:latest
             nomad job run /opt/nomad/jobs/gatekeeper.nomad
