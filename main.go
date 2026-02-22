@@ -135,6 +135,13 @@ func (s *AuthService) Routes() []bedrock.Route {
 	adminMiddleware := RequireRole("admin")
 
 	return []bedrock.Route{
+		// Human-readable status page
+		{
+			Method:  "GET",
+			Path:    "/status",
+			Handler: s.Health,
+		},
+
 		// Public routes
 		{
 			Method:  "POST",
