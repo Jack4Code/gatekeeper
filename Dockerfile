@@ -26,7 +26,6 @@ WORKDIR /root/
 
 # Copy binary, config, and migrations from builder
 COPY --from=builder /app/gatekeeper .
-COPY --from=builder /app/config.toml .
 COPY --from=builder /app/migrations ./migrations
 
 # Expose ports
