@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
+  IMAGE: ghcr.io/jack4code/gatekeeper
 
 jobs:
   deploy:
