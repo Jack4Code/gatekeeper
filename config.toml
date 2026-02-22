@@ -1,0 +1,8 @@
+jwt_expiration = "24h"
+min_password_len = 8
+
+[bedrock]
+http_port = 8080
+health_port = 9090
+log_level = "info"
+environment = "production"
