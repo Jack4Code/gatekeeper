@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gatekeeper // Login</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Share Tech Mono', monospace;
+            background: #050505;
+            color: #39ff14;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            overflow-x: hidden;
+        }
+
+        /* scanline overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.15) 2px,
+                rgba(0,0,0,0.15) 4px
+            );
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* vignette */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%);
+            pointer-events: none;
+            z-index: 11;
+        }
+
+        .terminal {
+            position: relative;
+            width: min(560px, 100%);
+            border: 1px solid #39ff14;
+            box-shadow: 0 0 18px rgba(57,255,20,0.3), inset 0 0 40px rgba(57,255,20,0.04);
+            padding: 2rem 2rem 2.2rem;
+            z-index: 20;
+        }
+
+        .terminal-bar {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #39ff14, transparent);
+            opacity: 0.7;
+        }
+
+        .label {
+            font-size: 0.7rem;
+            letter-spacing: 0.2em;
+            color: #1f8c0a;
+            text-transform: uppercase;
+            margin-bottom: 1.4rem;
+            overflow-wrap: break-word;
+        }
+
+        .label span { color: #39ff14; }
+
+        .prompt-line {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            margin-bottom: 1rem;
+        }
+
+        .prompt-char {
+            color: #1f8c0a;
+            font-size: clamp(0.7rem, 3.5vw, 0.9rem);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .field-label {
+            color: #2eb809;
+            font-size: clamp(0.75rem, 3.5vw, 0.9rem);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .field-input {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid #1a3d0d;
+            color: #39ff14;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: clamp(0.75rem, 3.5vw, 0.9rem);
+            outline: none;
+            width: 100%;
+            min-width: 0;
+            caret-color: #39ff14;
+            padding: 0 0 2px;
+        }
+
+        .field-input:focus {
+            border-bottom-color: #39ff14;
+            text-shadow: 0 0 6px rgba(57,255,20,0.4);
+        }
+
+        .field-input::placeholder {
+            color: #1a3d0d;
+        }
+
+        /* hide browser password reveal icon */
+        .field-input::-ms-reveal,
+        .field-input::-webkit-contacts-auto-fill-button,
+        .field-input::-webkit-credentials-auto-fill-button { display: none; }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #1a3d0d;
+            margin: 1.2rem 0;
+        }
+
+        .submit-line {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 1.4rem;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid #39ff14;
+            color: #39ff14;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: clamp(0.75rem, 3.5vw, 0.9rem);
+            padding: 0.35rem 1.1rem;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            transition: background 0.15s, box-shadow 0.15s;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: rgba(57,255,20,0.1);
+            box-shadow: 0 0 10px rgba(57,255,20,0.25);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 0.55em;
+            height: 1em;
+            background: #39ff14;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: blink 1.1s step-end infinite;
+        }
+
+        .cursor.hidden { display: none; }
+
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* Output area */
+        #output {
+            margin-top: 1.4rem;
+            display: none;
+        }
+
+        .out-header {
+            font-size: clamp(0.65rem, 3vw, 0.75rem);
+            color: #1f8c0a;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 0.6rem;
+        }
+
+        .out-block {
+            font-size: clamp(0.65rem, 2.8vw, 0.75rem);
+            line-height: 1.8;
+            color: #1f8c0a;
+            overflow-wrap: break-word;
+            word-break: break-all;
+        }
+
+        .out-block .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0 0.5rem;
+        }
+
+        .out-block .key   { color: #2eb809; white-space: nowrap; }
+        .out-block .value { color: #39ff14; min-width: 0; overflow-wrap: break-word; }
+
+        .out-block .section {
+            color: #1f8c0a;
+            margin-top: 0.6rem;
+            margin-bottom: 0.2rem;
+            letter-spacing: 0.1em;
+        }
+
+        .err-block {
+            margin-top: 0.8rem;
+            padding: 0.6rem 0.8rem;
+            border-left: 2px solid #ff3232;
+            color: #ff3232;
+            font-size: clamp(0.65rem, 3vw, 0.75rem);
+            background: rgba(255,50,50,0.05);
+            overflow-wrap: break-word;
+        }
+
+        .spinner {
+            display: inline-block;
+            color: #1f8c0a;
+            font-size: clamp(0.75rem, 3.5vw, 0.9rem);
+        }
+
+        @media (max-width: 360px) {
+            .terminal { padding: 1.4rem 1.2rem 1.6rem; }
+            .label { letter-spacing: 0.1em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <div class="terminal-bar"></div>
+
+        <div class="label">// <span>gatekeeper</span> &mdash; authenticate</div>
+
+        <form id="login-form" autocomplete="off">
+            <div class="prompt-line">
+                <span class="prompt-char">root@gatekeeper:~$</span>
+                <span class="field-label">email&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                <input
+                    class="field-input"
+                    id="email"
+                    type="email"
+                    name="email"
+                    placeholder="user@example.com"
+                    autocomplete="username"
+                    spellcheck="false"
+                    required
+                />
+            </div>
+
+            <div class="prompt-line">
+                <span class="prompt-char">root@gatekeeper:~$</span>
+                <span class="field-label">password</span>
+                <input
+                    class="field-input"
+                    id="password"
+                    type="password"
+                    name="password"
+                    placeholder="••••••••"
+                    autocomplete="current-password"
+                    required
+                />
+            </div>
+
+            <div class="submit-line">
+                <span class="prompt-char">root@gatekeeper:~$</span>
+                <button class="btn" id="submit-btn" type="submit">[ AUTHENTICATE ]</button>
+                <span class="spinner" id="spinner" style="display:none;">processing...</span>
+                <span class="cursor" id="idle-cursor"></span>
+            </div>
+        </form>
+
+        <div id="output">
+            <hr class="divider">
+            <div class="out-header" id="out-header"></div>
+            <div class="out-block" id="out-body"></div>
+        </div>
+    </div>
+
+    <script>
+        const form       = document.getElementById('login-form');
+        const submitBtn  = document.getElementById('submit-btn');
+        const spinner    = document.getElementById('spinner');
+        const idleCursor = document.getElementById('idle-cursor');
+        const output     = document.getElementById('output');
+        const outHeader  = document.getElementById('out-header');
+        const outBody    = document.getElementById('out-body');
+
+        function row(key, value) {
+            const d = document.createElement('div');
+            d.className = 'row';
+            d.innerHTML = `<span class="key">${esc(key)}</span><span class="value">${esc(value)}</span>`;
+            return d;
+        }
+
+        function section(label) {
+            const d = document.createElement('div');
+            d.className = 'section';
+            d.textContent = label;
+            return d;
+        }
+
+        function esc(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function truncate(s, max) {
+            return s.length > max ? s.slice(0, max) + '...' : s;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email    = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            // UI: loading state
+            submitBtn.disabled = true;
+            spinner.style.display = 'inline';
+            idleCursor.classList.add('hidden');
+            output.style.display = 'none';
+            outBody.innerHTML = '';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await res.json();
+
+                output.style.display = 'block';
+
+                if (!res.ok) {
+                    outHeader.textContent = `! AUTH FAILED [${res.status}]`;
+                    outHeader.style.color = '#ff3232';
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'err-block';
+                    errDiv.textContent = data.error || 'unknown error';
+                    outBody.appendChild(errDiv);
+                } else {
+                    outHeader.textContent = 'AUTH RESPONSE';
+                    outHeader.style.color = '';
+
+                    // Tokens
+                    outBody.appendChild(section('// tokens'));
+                    outBody.appendChild(row('token         ', truncate(data.token || '', 64)));
+                    outBody.appendChild(row('id_token      ', truncate(data.id_token || '', 64)));
+                    outBody.appendChild(row('refresh_token ', truncate(data.refresh_token || '', 48)));
+
+                    // User
+                    if (data.user) {
+                        outBody.appendChild(section('// user'));
+                        outBody.appendChild(row('id         ', data.user.id || ''));
+                        outBody.appendChild(row('email      ', data.user.email || ''));
+                        outBody.appendChild(row('name       ', data.user.name || ''));
+                        outBody.appendChild(row('created_at ', data.user.created_at || ''));
+                    }
+
+                    // Raw JSON
+                    outBody.appendChild(section('// raw'));
+                    const pre = document.createElement('div');
+                    pre.className = 'value';
+                    pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;';
+                    pre.textContent = JSON.stringify(data, null, 2);
+                    outBody.appendChild(pre);
+                }
+            } catch (err) {
+                output.style.display = 'block';
+                outHeader.textContent = '! CONNECTION ERROR';
+                outHeader.style.color = '#ff3232';
+                const errDiv = document.createElement('div');
+                errDiv.className = 'err-block';
+                errDiv.textContent = err.message;
+                outBody.appendChild(errDiv);
+            } finally {
+                submitBtn.disabled = false;
+                spinner.style.display = 'none';
+                idleCursor.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
