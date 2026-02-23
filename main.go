@@ -142,6 +142,13 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Handler: s.Health,
 		},
 
+		// Terminal login UI
+		{
+			Method:  "GET",
+			Path:    "/login",
+			Handler: s.LoginPage,
+		},
+
 		// Public routes
 		{
 			Method:  "POST",
