@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gatekeeper // Login</title>
+    <title>Gatekeeper // Register</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 
@@ -233,6 +233,22 @@
             font-size: clamp(0.75rem, 3.5vw, 0.9rem);
         }
 
+        .login-link {
+            margin-top: 1.2rem;
+            font-size: clamp(0.6rem, 2.8vw, 0.7rem);
+            color: #1f8c0a;
+        }
+
+        .login-link a {
+            color: #2eb809;
+            text-decoration: none;
+        }
+
+        .login-link a:hover {
+            color: #39ff14;
+            text-shadow: 0 0 6px rgba(57,255,20,0.4);
+        }
+
         @media (max-width: 360px) {
             .terminal { padding: 1.4rem 1.2rem 1.6rem; }
             .label { letter-spacing: 0.1em; }
@@ -243,9 +259,24 @@
     <div class="terminal">
         <div class="terminal-bar"></div>
 
-        <div class="label">// <span>gatekeeper</span> &mdash; authenticate</div>
+        <div class="label">// <span>gatekeeper</span> &mdash; create account</div>
 
-        <form id="login-form" autocomplete="off">
+        <form id="register-form" autocomplete="off">
+            <div class="prompt-line">
+                <span class="prompt-char">root@gatekeeper:~$</span>
+                <span class="field-label">name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                <input
+                    class="field-input"
+                    id="name"
+                    type="text"
+                    name="name"
+                    placeholder="Jane Smith"
+                    autocomplete="name"
+                    spellcheck="false"
+                    required
+                />
+            </div>
+
             <div class="prompt-line">
                 <span class="prompt-char">root@gatekeeper:~$</span>
                 <span class="field-label">email&nbsp;&nbsp;&nbsp;&nbsp;</span>
@@ -270,14 +301,14 @@
                     type="password"
                     name="password"
                     placeholder="••••••••"
-                    autocomplete="current-password"
+                    autocomplete="new-password"
                     required
                 />
             </div>
 
             <div class="submit-line">
                 <span class="prompt-char">root@gatekeeper:~$</span>
-                <button class="btn" id="submit-btn" type="submit">[ AUTHENTICATE ]</button>
+                <button class="btn" id="submit-btn" type="submit">[ CREATE ACCOUNT ]</button>
                 <span class="spinner" id="spinner" style="display:none;">processing...</span>
                 <span class="cursor" id="idle-cursor"></span>
             </div>
@@ -288,10 +319,12 @@
             <div class="out-header" id="out-header"></div>
             <div class="out-block" id="out-body"></div>
         </div>
+
+        <div class="login-link">// already have an account? <a href="/login">[ LOGIN ]</a></div>
     </div>
 
     <script>
-        const form       = document.getElementById('login-form');
+        const form       = document.getElementById('register-form');
         const submitBtn  = document.getElementById('submit-btn');
         const spinner    = document.getElementById('spinner');
         const idleCursor = document.getElementById('idle-cursor');
@@ -328,6 +361,7 @@
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const name     = document.getElementById('name').value.trim();
             const email    = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
 
@@ -339,10 +373,10 @@
             outBody.innerHTML = '';
 
             try {
-                const res = await fetch('/api/login', {
+                const res = await fetch('/api/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password }),
+                    body: JSON.stringify({ name, email, password }),
                 });
 
                 const data = await res.json();
@@ -350,14 +384,14 @@
                 output.style.display = 'block';
 
                 if (!res.ok) {
-                    outHeader.textContent = `! AUTH FAILED [${res.status}]`;
+                    outHeader.textContent = `! REGISTRATION FAILED [${res.status}]`;
                     outHeader.style.color = '#ff3232';
                     const errDiv = document.createElement('div');
                     errDiv.className = 'err-block';
                     errDiv.textContent = data.error || 'unknown error';
                     outBody.appendChild(errDiv);
                 } else {
-                    outHeader.textContent = 'AUTH RESPONSE';
+                    outHeader.textContent = 'ACCOUNT CREATED';
                     outHeader.style.color = '';
 
                     // Tokens
