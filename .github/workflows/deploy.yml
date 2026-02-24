@@ -2,6 +2,9 @@ name: Deploy
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 env:
   IMAGE: ghcr.io/jack4code/gatekeeper
@@ -39,3 +42,4 @@ jobs:
           script: |
             docker pull ghcr.io/jack4code/gatekeeper:latest
             nomad job run /opt/nomad/jobs/gatekeeper.nomad
+            nomad alloc restart $(nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' gatekeeper)
