@@ -149,6 +149,13 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Handler: s.LoginPage,
 		},
 
+		// Terminal register UI
+		{
+			Method:  "GET",
+			Path:    "/register",
+			Handler: s.RegisterPage,
+		},
+
 		// Public routes
 		{
 			Method:  "POST",
