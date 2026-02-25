@@ -42,9 +42,10 @@ type Config struct {
 	MinPasswordLen         int           `toml:"min_password_len" env:"MIN_PASSWORD_LEN"`
 
 	// Bootstrap admin settings
-	BootstrapAdminEmail    string `toml:"bootstrap_admin_email" env:"BOOTSTRAP_ADMIN_EMAIL"`
-	BootstrapAdminPassword string `toml:"bootstrap_admin_password" env:"BOOTSTRAP_ADMIN_PASSWORD"`
-	BootstrapAdminName     string `toml:"bootstrap_admin_name" env:"BOOTSTRAP_ADMIN_NAME"`
+	BootstrapAdminEmail     string `toml:"bootstrap_admin_email" env:"BOOTSTRAP_ADMIN_EMAIL"`
+	BootstrapAdminPassword  string `toml:"bootstrap_admin_password" env:"BOOTSTRAP_ADMIN_PASSWORD"`
+	BootstrapAdminName      string `toml:"bootstrap_admin_name" env:"BOOTSTRAP_ADMIN_NAME"`
+	BootstrapAdminAccountID string `toml:"bootstrap_admin_account_id" env:"BOOTSTRAP_ADMIN_ACCOUNT_ID"`
 }
 
 // Request/Response types
@@ -300,6 +301,13 @@ func (s *AuthService) Routes() []bedrock.Route {
 
 // Register creates a new user account
 func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Response {
+	accountID := r.Header.Get("X-Account-ID")
+	if accountID == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "X-Account-ID header is required",
+		})
+	}
+
 	var req RegisterRequest
 	if err := bedrock.DecodeJSON(r, &req); err != nil {
 		return bedrock.JSON(400, map[string]string{
@@ -314,8 +322,8 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 		})
 	}
 
-	// Check if user already exists
-	existingUser, _ := s.userRepo.GetByEmail(req.Email)
+	// Check if user already exists within this account
+	existingUser, _ := s.userRepo.GetByEmail(accountID, req.Email)
 	if existingUser != nil {
 		return bedrock.JSON(409, map[string]string{
 			"error": "email already registered",
@@ -332,7 +340,7 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 	}
 
 	// Create user
-	user, err := s.userRepo.Create(req.Email, passwordHash, req.Name)
+	user, err := s.userRepo.Create(accountID, req.Email, passwordHash, req.Name)
 	if err != nil {
 		if err == models.ErrEmailAlreadyExists {
 			return bedrock.JSON(409, map[string]string{
@@ -373,6 +381,13 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 
 // Login authenticates a user
 func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Response {
+	accountID := r.Header.Get("X-Account-ID")
+	if accountID == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "X-Account-ID header is required",
+		})
+	}
+
 	var req LoginRequest
 	if err := bedrock.DecodeJSON(r, &req); err != nil {
 		return bedrock.JSON(400, map[string]string{
@@ -387,8 +402,8 @@ func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Respon
 		})
 	}
 
-	// Get user by email
-	user, err := s.userRepo.GetByEmail(req.Email)
+	// Get user by email within this account
+	user, err := s.userRepo.GetByEmail(accountID, req.Email)
 	if err != nil {
 		if err == models.ErrUserNotFound {
 			return bedrock.JSON(401, map[string]string{
@@ -518,7 +533,7 @@ func (s *AuthService) issueTokenPair(user *models.User) (*AuthResponse, error) {
 	roles, permissions := s.getUserRolesAndPermissions(user.ID)
 
 	// Generate access JWT
-	accessToken, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	accessToken, err := GenerateJWTWithRoles(user.ID, user.AccountID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +627,7 @@ func (s *AuthService) Refresh(ctx context.Context, r *http.Request) bedrock.Resp
 	roles, permissions := s.getUserRolesAndPermissions(user.ID)
 
 	// Generate new access JWT
-	accessToken, err := GenerateJWTWithRoles(user.ID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
+	accessToken, err := GenerateJWTWithRoles(user.ID, user.AccountID, user.Email, roles, permissions, s.config.JWTSecret, s.config.JWTExpiration)
 	if err != nil {
 		log.Printf("Failed to generate JWT during refresh: %v", err)
 		return bedrock.JSON(500, map[string]string{

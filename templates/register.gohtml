@@ -264,6 +264,21 @@
         <form id="register-form" autocomplete="off">
             <div class="prompt-line">
                 <span class="prompt-char">root@gatekeeper:~$</span>
+                <span class="field-label">account&nbsp;</span>
+                <input
+                    class="field-input"
+                    id="account-id"
+                    type="text"
+                    name="account_id"
+                    placeholder="org-abc123"
+                    autocomplete="organization"
+                    spellcheck="false"
+                    required
+                />
+            </div>
+
+            <div class="prompt-line">
+                <span class="prompt-char">root@gatekeeper:~$</span>
                 <span class="field-label">name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
                 <input
                     class="field-input"
@@ -361,9 +376,10 @@
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const name     = document.getElementById('name').value.trim();
-            const email    = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value;
+            const accountId = document.getElementById('account-id').value.trim();
+            const name      = document.getElementById('name').value.trim();
+            const email     = document.getElementById('email').value.trim();
+            const password  = document.getElementById('password').value;
 
             // UI: loading state
             submitBtn.disabled = true;
@@ -375,7 +391,10 @@
             try {
                 const res = await fetch('/api/register', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Account-ID': accountId,
+                    },
                     body: JSON.stringify({ name, email, password }),
                 });
 
@@ -404,6 +423,7 @@
                     if (data.user) {
                         outBody.appendChild(section('// user'));
                         outBody.appendChild(row('id         ', data.user.id || ''));
+                        outBody.appendChild(row('account_id ', data.user.account_id || ''));
                         outBody.appendChild(row('email      ', data.user.email || ''));
                         outBody.appendChild(row('name       ', data.user.name || ''));
                         outBody.appendChild(row('created_at ', data.user.created_at || ''));
