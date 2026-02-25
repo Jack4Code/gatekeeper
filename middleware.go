@@ -13,6 +13,7 @@ type contextKey string
 
 const (
 	contextKeyUserID      contextKey = "user_id"
+	contextKeyAccountID   contextKey = "account_id"
 	contextKeyRoles       contextKey = "roles"
 	contextKeyPermissions contextKey = "permissions"
 	contextKeyEmail       contextKey = "email"
@@ -50,6 +51,7 @@ func RequireAuthWithRoles(secret string) bedrock.Middleware {
 
 			// Add user data to context
 			ctx = context.WithValue(ctx, contextKeyUserID, claims.UserID)
+			ctx = context.WithValue(ctx, contextKeyAccountID, claims.AccountID)
 			ctx = context.WithValue(ctx, contextKeyEmail, claims.Email)
 			ctx = context.WithValue(ctx, contextKeyRoles, claims.Roles)
 			ctx = context.WithValue(ctx, contextKeyPermissions, claims.Permissions)
@@ -63,6 +65,12 @@ func RequireAuthWithRoles(secret string) bedrock.Middleware {
 func GetUserID(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(contextKeyUserID).(string)
 	return userID, ok
+}
+
+// GetAccountID retrieves account ID from context
+func GetAccountID(ctx context.Context) (string, bool) {
+	accountID, ok := ctx.Value(contextKeyAccountID).(string)
+	return accountID, ok
 }
 
 // GetRoles retrieves roles from context
@@ -96,8 +104,8 @@ func RequirePermission(permission string) bedrock.Middleware {
 
 			if !contains(permissions, permission) {
 				return bedrock.JSON(403, map[string]string{
-					"error":      "insufficient permissions",
-					"required":   permission,
+					"error":    "insufficient permissions",
+					"required": permission,
 				})
 			}
 
@@ -124,7 +132,7 @@ func RequireAnyPermission(requiredPermissions ...string) bedrock.Middleware {
 			}
 
 			return bedrock.JSON(403, map[string]string{
-				"error":      "insufficient permissions",
+				"error":        "insufficient permissions",
 				"required_any": strings.Join(requiredPermissions, ", "),
 			})
 		}

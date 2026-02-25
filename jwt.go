@@ -11,13 +11,14 @@ import (
 type CustomClaims struct {
 	jwt.RegisteredClaims
 	UserID      string   `json:"user_id"`
+	AccountID   string   `json:"account_id"`
 	Email       string   `json:"email"`
 	Roles       []string `json:"roles"`
 	Permissions []string `json:"permissions"`
 }
 
-// GenerateJWTWithRoles creates a JWT token with user ID, email, roles, and permissions
-func GenerateJWTWithRoles(userID, email string, roles, permissions []string, secret string, expiration time.Duration) (string, error) {
+// GenerateJWTWithRoles creates a JWT token with user ID, account ID, email, roles, and permissions
+func GenerateJWTWithRoles(userID, accountID, email string, roles, permissions []string, secret string, expiration time.Duration) (string, error) {
 	if secret == "" {
 		return "", fmt.Errorf("JWT secret cannot be empty")
 	}
@@ -30,6 +31,7 @@ func GenerateJWTWithRoles(userID, email string, roles, permissions []string, sec
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiration)),
 		},
 		UserID:      userID,
+		AccountID:   accountID,
 		Email:       email,
 		Roles:       roles,
 		Permissions: permissions,

@@ -25,8 +25,10 @@ func BootstrapAdmin(service *AuthService) error {
 		return nil
 	}
 
-	// Check if admin user already exists
-	existingUser, _ := service.userRepo.GetByEmail(adminEmail)
+	adminAccountID := service.config.BootstrapAdminAccountID
+
+	// Check if admin user already exists within the configured account
+	existingUser, _ := service.userRepo.GetByEmail(adminAccountID, adminEmail)
 	if existingUser != nil {
 		log.Printf("Admin user %s already exists, skipping bootstrap", adminEmail)
 		return nil
@@ -45,7 +47,7 @@ func BootstrapAdmin(service *AuthService) error {
 		adminName = "Admin"
 	}
 
-	log.Printf("Creating bootstrap admin user: %s", adminEmail)
+	log.Printf("Creating bootstrap admin user: %s (account: %q)", adminEmail, adminAccountID)
 
 	// Hash password
 	passwordHash, err := bedrock.HashPassword(adminPassword)
@@ -54,7 +56,7 @@ func BootstrapAdmin(service *AuthService) error {
 	}
 
 	// Create admin user
-	user, err := service.userRepo.Create(adminEmail, passwordHash, adminName)
+	user, err := service.userRepo.Create(adminAccountID, adminEmail, passwordHash, adminName)
 	if err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
@@ -101,6 +103,11 @@ func InteractiveBootstrap() error {
 		jwtSecret = generateRandomSecret()
 		fmt.Printf("Generated JWT_SECRET: %s\n", jwtSecret)
 	}
+
+	// Get account ID
+	fmt.Print("Enter account ID (X-Account-ID) for admin user [leave empty for none]: ")
+	adminAccountID, _ := reader.ReadString('\n')
+	adminAccountID = strings.TrimSpace(adminAccountID)
 
 	// Get admin email
 	fmt.Print("Enter admin email: ")
@@ -170,7 +177,7 @@ func InteractiveBootstrap() error {
 	}
 
 	// Create admin user
-	user, err := service.userRepo.Create(adminEmail, passwordHash, adminName)
+	user, err := service.userRepo.Create(adminAccountID, adminEmail, passwordHash, adminName)
 	if err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
@@ -193,6 +200,7 @@ func InteractiveBootstrap() error {
 	fmt.Println()
 	fmt.Println("✓ Admin user created successfully!")
 	fmt.Printf("Email: %s\n", adminEmail)
+	fmt.Printf("Account ID: %q\n", adminAccountID)
 	fmt.Printf("Role: admin\n")
 	fmt.Println()
 	fmt.Println("Add these to your .env file:")

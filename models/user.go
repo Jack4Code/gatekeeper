@@ -16,6 +16,7 @@ var (
 // User represents a user in the system
 type User struct {
 	ID           string    `json:"id"`
+	AccountID    string    `json:"account_id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"` // Never expose in JSON
 	Name         string    `json:"name"`
@@ -34,26 +35,26 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 // Create inserts a new user into the database
-func (r *UserRepository) Create(email, passwordHash, name string) (*User, error) {
+func (r *UserRepository) Create(accountID, email, passwordHash, name string) (*User, error) {
 	user := &User{
 		ID:           uuid.New().String(),
+		AccountID:    accountID,
 		Email:        email,
 		PasswordHash: passwordHash,
 		Name:         name,
 	}
 
 	query := `
-		INSERT INTO users (id, email, password_hash, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		INSERT INTO users (id, account_id, email, password_hash, name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		RETURNING created_at, updated_at
 	`
 
-	err := r.db.QueryRow(query, user.ID, user.Email, user.PasswordHash, user.Name).
+	err := r.db.QueryRow(query, user.ID, user.AccountID, user.Email, user.PasswordHash, user.Name).
 		Scan(&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
-		// Check for unique constraint violation (duplicate email)
-		if err.Error() == `pq: duplicate key value violates unique constraint "users_email_key"` {
+		if isDuplicateKeyError(err, "users_email_account_id_key") {
 			return nil, ErrEmailAlreadyExists
 		}
 		return nil, err
@@ -67,13 +68,14 @@ func (r *UserRepository) GetByID(id string) (*User, error) {
 	user := &User{}
 
 	query := `
-		SELECT id, email, password_hash, name, created_at, updated_at
+		SELECT id, account_id, email, password_hash, name, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
 
 	err := r.db.QueryRow(query, id).Scan(
 		&user.ID,
+		&user.AccountID,
 		&user.Email,
 		&user.PasswordHash,
 		&user.Name,
@@ -91,18 +93,19 @@ func (r *UserRepository) GetByID(id string) (*User, error) {
 	return user, nil
 }
 
-// GetByEmail retrieves a user by their email address
-func (r *UserRepository) GetByEmail(email string) (*User, error) {
+// GetByEmail retrieves a user by their email address within a specific account
+func (r *UserRepository) GetByEmail(accountID, email string) (*User, error) {
 	user := &User{}
 
 	query := `
-		SELECT id, email, password_hash, name, created_at, updated_at
+		SELECT id, account_id, email, password_hash, name, created_at, updated_at
 		FROM users
-		WHERE email = $1
+		WHERE account_id = $1 AND email = $2
 	`
 
-	err := r.db.QueryRow(query, email).Scan(
+	err := r.db.QueryRow(query, accountID, email).Scan(
 		&user.ID,
+		&user.AccountID,
 		&user.Email,
 		&user.PasswordHash,
 		&user.Name,
@@ -126,12 +129,13 @@ func (r *UserRepository) Update(id, name string) (*User, error) {
 		UPDATE users
 		SET name = $1, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $2
-		RETURNING id, email, password_hash, name, created_at, updated_at
+		RETURNING id, account_id, email, password_hash, name, created_at, updated_at
 	`
 
 	user := &User{}
 	err := r.db.QueryRow(query, name, id).Scan(
 		&user.ID,
+		&user.AccountID,
 		&user.Email,
 		&user.PasswordHash,
 		&user.Name,
@@ -173,7 +177,7 @@ func (r *UserRepository) Delete(id string) error {
 // List retrieves all users (with optional pagination)
 func (r *UserRepository) List(limit, offset int) ([]*User, error) {
 	query := `
-		SELECT id, email, password_hash, name, created_at, updated_at
+		SELECT id, account_id, email, password_hash, name, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -190,6 +194,7 @@ func (r *UserRepository) List(limit, offset int) ([]*User, error) {
 		user := &User{}
 		err := rows.Scan(
 			&user.ID,
+			&user.AccountID,
 			&user.Email,
 			&user.PasswordHash,
 			&user.Name,
