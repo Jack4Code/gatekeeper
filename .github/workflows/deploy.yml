@@ -41,5 +41,15 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             docker pull ghcr.io/jack4code/gatekeeper:latest
+
+            ALLOC_ID=$(nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' gatekeeper)
+            DB_URL=$(nomad alloc exec -task gatekeeper "$ALLOC_ID" printenv DATABASE_URL)
+
+            docker run --rm \
+              --network host \
+              -e DATABASE_URL="$DB_URL" \
+              ghcr.io/jack4code/gatekeeper:latest \
+              ./gatekeeper migrate up
+
             nomad job run /opt/nomad/jobs/gatekeeper.nomad
-            nomad alloc restart $(nomad job allocs -t '{{range .}}{{if eq .ClientStatus "running"}}{{.ID}}{{end}}{{end}}' gatekeeper)
+            nomad alloc restart "$ALLOC_ID"
