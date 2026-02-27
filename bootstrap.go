@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"syscall"
@@ -21,7 +21,7 @@ func BootstrapAdmin(service *AuthService) error {
 	// Check if bootstrap admin email is configured
 	adminEmail := service.config.BootstrapAdminEmail
 	if adminEmail == "" {
-		log.Println("BOOTSTRAP_ADMIN_EMAIL not set, skipping admin bootstrap")
+		slog.Info("BOOTSTRAP_ADMIN_EMAIL not set, skipping admin bootstrap")
 		return nil
 	}
 
@@ -30,15 +30,15 @@ func BootstrapAdmin(service *AuthService) error {
 	// Check if admin user already exists within the configured account
 	existingUser, _ := service.userRepo.GetByEmail(adminAccountID, adminEmail)
 	if existingUser != nil {
-		log.Printf("Admin user %s already exists, skipping bootstrap", adminEmail)
+		slog.Info("admin user already exists, skipping bootstrap", "email", adminEmail)
 		return nil
 	}
 
 	// Get password from config
 	adminPassword := service.config.BootstrapAdminPassword
 	if adminPassword == "" {
-		log.Println("BOOTSTRAP_ADMIN_PASSWORD not set, skipping admin bootstrap")
-		log.Println("To create an admin user, set both BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD environment variables")
+		slog.Info("BOOTSTRAP_ADMIN_PASSWORD not set, skipping admin bootstrap",
+			"hint", "set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to create an admin user")
 		return nil
 	}
 
@@ -47,7 +47,7 @@ func BootstrapAdmin(service *AuthService) error {
 		adminName = "Admin"
 	}
 
-	log.Printf("Creating bootstrap admin user: %s (account: %q)", adminEmail, adminAccountID)
+	slog.Info("creating bootstrap admin user", "email", adminEmail, "account_id", adminAccountID)
 
 	// Hash password
 	passwordHash, err := bedrock.HashPassword(adminPassword)
@@ -76,7 +76,7 @@ func BootstrapAdmin(service *AuthService) error {
 		return fmt.Errorf("failed to assign admin role: %w", err)
 	}
 
-	log.Printf("✓ Bootstrap admin user created successfully: %s", adminEmail)
+	slog.Info("bootstrap admin user created", "email", adminEmail)
 	return nil
 }
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -79,7 +79,7 @@ func (s *AuthService) CreateRole(ctx context.Context, r *http.Request) bedrock.R
 				"error": "role name already exists",
 			})
 		}
-		log.Printf("Failed to create role: %v", err)
+		slog.Error("failed to create role", "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to create role",
 		})
@@ -107,7 +107,7 @@ func (s *AuthService) ListRoles(ctx context.Context, r *http.Request) bedrock.Re
 
 	roles, err := s.roleRepo.List(limit, offset)
 	if err != nil {
-		log.Printf("Failed to list roles: %v", err)
+		slog.Error("failed to list roles", "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to list roles",
 		})
@@ -132,7 +132,7 @@ func (s *AuthService) GetRole(ctx context.Context, r *http.Request) bedrock.Resp
 				"error": "role not found",
 			})
 		}
-		log.Printf("Failed to get role: %v", err)
+		slog.Error("failed to get role", "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to get role",
 		})
@@ -140,7 +140,7 @@ func (s *AuthService) GetRole(ctx context.Context, r *http.Request) bedrock.Resp
 
 	permissions, err := s.roleRepo.GetPermissions(roleID)
 	if err != nil {
-		log.Printf("Failed to get role permissions: %v", err)
+		slog.Error("failed to get role permissions", "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to get role permissions",
 		})
@@ -187,7 +187,7 @@ func (s *AuthService) UpdateRole(ctx context.Context, r *http.Request) bedrock.R
 				"error": "role name already exists",
 			})
 		}
-		log.Printf("Failed to update role: %v", err)
+		slog.Error("failed to update role", "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to update role",
 		})
@@ -207,7 +207,7 @@ func (s *AuthService) DeleteRole(ctx context.Context, r *http.Request) bedrock.R
 				"error": "role not found",
 			})
 		}
-		log.Printf("Failed to delete role: %v", err)
+		slog.Error("failed to delete role", "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to delete role",
 		})
@@ -252,7 +252,7 @@ func (s *AuthService) CreatePermission(ctx context.Context, r *http.Request) bed
 				"error": err.Error(),
 			})
 		}
-		log.Printf("Failed to create permission: %v", err)
+		slog.Error("failed to create permission", "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to create permission",
 		})
@@ -290,7 +290,7 @@ func (s *AuthService) ListPermissions(ctx context.Context, r *http.Request) bedr
 	}
 
 	if err != nil {
-		log.Printf("Failed to list permissions: %v", err)
+		slog.Error("failed to list permissions", "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to list permissions",
 		})
@@ -315,7 +315,7 @@ func (s *AuthService) GetPermission(ctx context.Context, r *http.Request) bedroc
 				"error": "permission not found",
 			})
 		}
-		log.Printf("Failed to get permission: %v", err)
+		slog.Error("failed to get permission", "permission_id", permissionID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to get permission",
 		})
@@ -335,7 +335,7 @@ func (s *AuthService) DeletePermission(ctx context.Context, r *http.Request) bed
 				"error": "permission not found",
 			})
 		}
-		log.Printf("Failed to delete permission: %v", err)
+		slog.Error("failed to delete permission", "permission_id", permissionID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to delete permission",
 		})
@@ -381,7 +381,7 @@ func (s *AuthService) AssignRoleToUser(ctx context.Context, r *http.Request) bed
 				"error": "user already has this role",
 			})
 		}
-		log.Printf("Failed to assign role to user: %v", err)
+		slog.Error("failed to assign role to user", "user_id", userID, "role_id", req.RoleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to assign role",
 		})
@@ -402,7 +402,7 @@ func (s *AuthService) RemoveRoleFromUser(ctx context.Context, r *http.Request) b
 				"error": "user does not have this role",
 			})
 		}
-		log.Printf("Failed to remove role from user: %v", err)
+		slog.Error("failed to remove role from user", "user_id", userID, "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to remove role",
 		})
@@ -420,7 +420,7 @@ func (s *AuthService) GetUserRoles(ctx context.Context, r *http.Request) bedrock
 
 	roles, err := s.userRoleRepo.GetUserRoles(userID)
 	if err != nil {
-		log.Printf("Failed to get user roles: %v", err)
+		slog.Error("failed to get user roles", "user_id", userID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to get user roles",
 		})
@@ -428,7 +428,7 @@ func (s *AuthService) GetUserRoles(ctx context.Context, r *http.Request) bedrock
 
 	permissions, err := s.userRoleRepo.GetUserPermissions(userID)
 	if err != nil {
-		log.Printf("Failed to get user permissions: %v", err)
+		slog.Error("failed to get user permissions", "user_id", userID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to get user permissions",
 		})
@@ -471,7 +471,7 @@ func (s *AuthService) AssignPermissionToRole(ctx context.Context, r *http.Reques
 				"error": "role already has this permission",
 			})
 		}
-		log.Printf("Failed to assign permission to role: %v", err)
+		slog.Error("failed to assign permission to role", "role_id", roleID, "permission_id", req.PermissionID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to assign permission",
 		})
@@ -499,7 +499,7 @@ func (s *AuthService) AssignMultiplePermissionsToRole(ctx context.Context, r *ht
 	}
 
 	if err := s.rolePermissionRepo.AssignMultiple(roleID, req.PermissionIDs); err != nil {
-		log.Printf("Failed to assign permissions to role: %v", err)
+		slog.Error("failed to assign permissions to role", "role_id", roleID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to assign permissions",
 		})
@@ -522,7 +522,7 @@ func (s *AuthService) RemovePermissionFromRole(ctx context.Context, r *http.Requ
 				"error": "role does not have this permission",
 			})
 		}
-		log.Printf("Failed to remove permission from role: %v", err)
+		slog.Error("failed to remove permission from role", "role_id", roleID, "permission_id", permissionID, "error", err)
 		return bedrock.JSON(500, map[string]string{
 			"error": "failed to remove permission",
 		})
