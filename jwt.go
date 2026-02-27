@@ -94,6 +94,60 @@ func GenerateIDToken(userID, email, name, secret string, expiration time.Duratio
 	return token.SignedString([]byte(secret))
 }
 
+// RegistrationClaims contains the account_id for a one-time registration token
+type RegistrationClaims struct {
+	jwt.RegisteredClaims
+	AccountID string `json:"account_id"`
+	TokenType string `json:"token_type"`
+}
+
+// GenerateRegistrationToken creates a short-lived JWT that authorises registration under a specific account
+func GenerateRegistrationToken(accountID, secret string, expiry time.Duration) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("JWT secret cannot be empty")
+	}
+
+	now := time.Now()
+	claims := RegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
+		},
+		AccountID: accountID,
+		TokenType: "registration",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+// ValidateRegistrationToken validates a registration token and returns its claims
+func ValidateRegistrationToken(tokenString, secret string) (*RegistrationClaims, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("JWT secret cannot be empty")
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &RegistrationClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(secret), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*RegistrationClaims); ok && token.Valid {
+		if claims.TokenType != "registration" {
+			return nil, fmt.Errorf("invalid token type")
+		}
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}
+
 // Helper function to format permissions as "resource:action" strings
 func formatPermissions(permissions []struct{ Resource, Action string }) []string {
 	result := make([]string, len(permissions))

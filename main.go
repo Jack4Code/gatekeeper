@@ -46,13 +46,22 @@ type Config struct {
 	BootstrapAdminPassword  string `toml:"bootstrap_admin_password" env:"BOOTSTRAP_ADMIN_PASSWORD"`
 	BootstrapAdminName      string `toml:"bootstrap_admin_name" env:"BOOTSTRAP_ADMIN_NAME"`
 	BootstrapAdminAccountID string `toml:"bootstrap_admin_account_id" env:"BOOTSTRAP_ADMIN_ACCOUNT_ID"`
+
+	// Registration token lifetime (short-lived tokens that gate self-registration)
+	RegistrationTokenExpiration time.Duration `toml:"registration_token_expiration" env:"REGISTRATION_TOKEN_EXPIRATION"`
 }
 
 // Request/Response types
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	RegistrationToken string `json:"registration_token"`
+	Email             string `json:"email"`
+	Password          string `json:"password"`
+	Name              string `json:"name"`
+}
+
+type RegistrationTokenResponse struct {
+	RegistrationToken string    `json:"registration_token"`
+	ExpiresAt         time.Time `json:"expires_at"`
 }
 
 type LoginRequest struct {
@@ -199,6 +208,14 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Middleware: []bedrock.Middleware{authMiddleware},
 		},
 
+		// Registration token generation (admin only)
+		{
+			Method:     "POST",
+			Path:       "/api/v1/registration-tokens",
+			Handler:    s.CreateRegistrationToken,
+			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
+		},
+
 		// Role management endpoints (admin only)
 		{
 			Method:     "POST",
@@ -301,19 +318,27 @@ func (s *AuthService) Routes() []bedrock.Route {
 
 // Register creates a new user account
 func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Response {
-	accountID := r.Header.Get("X-Account-ID")
-	if accountID == "" {
-		return bedrock.JSON(400, map[string]string{
-			"error": "X-Account-ID header is required",
-		})
-	}
-
 	var req RegisterRequest
 	if err := bedrock.DecodeJSON(r, &req); err != nil {
 		return bedrock.JSON(400, map[string]string{
 			"error": "invalid request body",
 		})
 	}
+
+	if req.RegistrationToken == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "registration_token is required",
+		})
+	}
+
+	regClaims, err := ValidateRegistrationToken(req.RegistrationToken, s.config.JWTSecret)
+	if err != nil {
+		return bedrock.JSON(401, map[string]string{
+			"error": "invalid or expired registration token",
+		})
+	}
+
+	accountID := regClaims.AccountID
 
 	// Validate input
 	if err := s.validateRegisterRequest(&req); err != nil {
@@ -379,12 +404,23 @@ func (s *AuthService) Register(ctx context.Context, r *http.Request) bedrock.Res
 	return bedrock.JSON(201, resp)
 }
 
+// isValidUUID returns true if s is a valid UUID
+func isValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
 // Login authenticates a user
 func (s *AuthService) Login(ctx context.Context, r *http.Request) bedrock.Response {
 	accountID := r.Header.Get("X-Account-ID")
 	if accountID == "" {
 		return bedrock.JSON(400, map[string]string{
 			"error": "X-Account-ID header is required",
+		})
+	}
+	if !isValidUUID(accountID) {
+		return bedrock.JSON(400, map[string]string{
+			"error": "X-Account-ID must be a valid UUID",
 		})
 	}
 
@@ -524,6 +560,30 @@ func (s *AuthService) DeleteCurrentUser(ctx context.Context, r *http.Request) be
 
 	return bedrock.JSON(200, map[string]string{
 		"message": "account deleted successfully",
+	})
+}
+
+// CreateRegistrationToken generates a short-lived token that allows a new user to register under the caller's account
+func (s *AuthService) CreateRegistrationToken(ctx context.Context, r *http.Request) bedrock.Response {
+	accountID, ok := GetAccountID(ctx)
+	if !ok {
+		return bedrock.JSON(500, map[string]string{
+			"error": "account ID not found in context",
+		})
+	}
+
+	expiry := s.config.RegistrationTokenExpiration
+	token, err := GenerateRegistrationToken(accountID, s.config.JWTSecret, expiry)
+	if err != nil {
+		log.Printf("Failed to generate registration token: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "failed to generate registration token",
+		})
+	}
+
+	return bedrock.JSON(200, RegistrationTokenResponse{
+		RegistrationToken: token,
+		ExpiresAt:         time.Now().Add(expiry),
 	})
 }
 
@@ -830,6 +890,9 @@ func serveCommand(cmd *cobra.Command, args []string) {
 	}
 	if cfg.RefreshTokenExpiration == 0 {
 		cfg.RefreshTokenExpiration = 7 * 24 * time.Hour
+	}
+	if cfg.RegistrationTokenExpiration == 0 {
+		cfg.RegistrationTokenExpiration = 1 * time.Hour
 	}
 	if cfg.MinPasswordLen == 0 {
 		cfg.MinPasswordLen = 8

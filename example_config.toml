@@ -11,6 +11,9 @@ jwt_secret = ""
 # Token lifetime (time.Duration string)
 jwt_expiration = "24h"
 
+# Lifetime of registration tokens issued by POST /api/v1/registration-tokens (admin only)
+registration_token_expiration = "1h"
+
 # Minimum password length
 min_password_len = 8
 

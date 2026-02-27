@@ -264,14 +264,14 @@
         <form id="register-form" autocomplete="off">
             <div class="prompt-line">
                 <span class="prompt-char">root@gatekeeper:~$</span>
-                <span class="field-label">account&nbsp;</span>
+                <span class="field-label">reg_token</span>
                 <input
                     class="field-input"
-                    id="account-id"
+                    id="registration-token"
                     type="text"
-                    name="account_id"
-                    placeholder="org-abc123"
-                    autocomplete="organization"
+                    name="registration_token"
+                    placeholder="eyJ..."
+                    autocomplete="off"
                     spellcheck="false"
                     required
                 />
@@ -339,13 +339,13 @@
     </div>
 
     <script>
-        const form       = document.getElementById('register-form');
-        const submitBtn  = document.getElementById('submit-btn');
-        const spinner    = document.getElementById('spinner');
-        const idleCursor = document.getElementById('idle-cursor');
-        const output     = document.getElementById('output');
-        const outHeader  = document.getElementById('out-header');
-        const outBody    = document.getElementById('out-body');
+        const form              = document.getElementById('register-form');
+        const submitBtn         = document.getElementById('submit-btn');
+        const spinner           = document.getElementById('spinner');
+        const idleCursor        = document.getElementById('idle-cursor');
+        const output            = document.getElementById('output');
+        const outHeader         = document.getElementById('out-header');
+        const outBody           = document.getElementById('out-body');
 
         function row(key, value) {
             const d = document.createElement('div');
@@ -376,10 +376,10 @@
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const accountId = document.getElementById('account-id').value.trim();
-            const name      = document.getElementById('name').value.trim();
-            const email     = document.getElementById('email').value.trim();
-            const password  = document.getElementById('password').value;
+            const registrationToken = document.getElementById('registration-token').value.trim();
+            const name              = document.getElementById('name').value.trim();
+            const email             = document.getElementById('email').value.trim();
+            const password          = document.getElementById('password').value;
 
             // UI: loading state
             submitBtn.disabled = true;
@@ -391,11 +391,8 @@
             try {
                 const res = await fetch('/api/register', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Account-ID': accountId,
-                    },
-                    body: JSON.stringify({ name, email, password }),
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ registration_token: registrationToken, name, email, password }),
                 });
 
                 const data = await res.json();
