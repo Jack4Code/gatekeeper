@@ -22,6 +22,7 @@ import (
 
 type AuthService struct {
 	db                 *sql.DB
+	accountRepo        *models.AccountRepository
 	userRepo           *models.UserRepository
 	roleRepo           *models.RoleRepository
 	permissionRepo     *models.PermissionRepository
@@ -62,6 +63,21 @@ type RegisterRequest struct {
 type RegistrationTokenResponse struct {
 	RegistrationToken string    `json:"registration_token"`
 	ExpiresAt         time.Time `json:"expires_at"`
+}
+
+type SignupRequest struct {
+	AccountName string `json:"account_name"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Name        string `json:"name"`
+}
+
+type SignupResponse struct {
+	Token        string         `json:"token"`
+	IDToken      string         `json:"id_token"`
+	RefreshToken string         `json:"refresh_token"`
+	User         *models.User   `json:"user"`
+	Account      *models.Account `json:"account"`
 }
 
 type LoginRequest struct {
@@ -107,6 +123,7 @@ func NewAuthService(cfg Config) (*AuthService, error) {
 
 	return &AuthService{
 		db:                 db,
+		accountRepo:        models.NewAccountRepository(db),
 		userRepo:           models.NewUserRepository(db),
 		roleRepo:           models.NewRoleRepository(db),
 		permissionRepo:     models.NewPermissionRepository(db),
@@ -167,6 +184,11 @@ func (s *AuthService) Routes() []bedrock.Route {
 		},
 
 		// Public routes
+		{
+			Method:  "POST",
+			Path:    "/api/signup",
+			Handler: s.Signup,
+		},
 		{
 			Method:  "POST",
 			Path:    "/api/register",
@@ -314,6 +336,90 @@ func (s *AuthService) Routes() []bedrock.Route {
 			Middleware: []bedrock.Middleware{authMiddleware, adminMiddleware},
 		},
 	}
+}
+
+// Signup creates a brand-new account and its first admin user in one step
+func (s *AuthService) Signup(ctx context.Context, r *http.Request) bedrock.Response {
+	var req SignupRequest
+	if err := bedrock.DecodeJSON(r, &req); err != nil {
+		return bedrock.JSON(400, map[string]string{
+			"error": "invalid request body",
+		})
+	}
+
+	if req.AccountName == "" {
+		return bedrock.JSON(400, map[string]string{
+			"error": "account_name is required",
+		})
+	}
+
+	// Reuse the same field validation as regular registration
+	regReq := &RegisterRequest{Email: req.Email, Password: req.Password, Name: req.Name}
+	if err := s.validateRegisterRequest(regReq); err != nil {
+		return bedrock.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+
+	// Create the account (unique name enforced by DB)
+	account, err := s.accountRepo.Create(req.AccountName)
+	if err != nil {
+		if err == models.ErrAccountNameTaken {
+			return bedrock.JSON(409, map[string]string{
+				"error": "account name already taken",
+			})
+		}
+		log.Printf("Failed to create account: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "failed to create account",
+		})
+	}
+
+	// Hash password
+	passwordHash, err := bedrock.HashPassword(req.Password)
+	if err != nil {
+		log.Printf("Failed to hash password: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "failed to create account",
+		})
+	}
+
+	// Create the first user under this account
+	user, err := s.userRepo.Create(account.ID, req.Email, passwordHash, req.Name)
+	if err != nil {
+		log.Printf("Failed to create user during signup: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "failed to create account",
+		})
+	}
+
+	// Assign the admin role to the account owner
+	adminRole, err := s.roleRepo.GetByName("admin")
+	if err != nil {
+		log.Printf("Warning: admin role not found during signup: %v", err)
+	} else {
+		userRole := &models.UserRole{UserID: user.ID, RoleID: adminRole.ID}
+		if err := s.userRoleRepo.Assign(userRole); err != nil {
+			log.Printf("Warning: failed to assign admin role during signup: %v", err)
+		}
+	}
+
+	// Issue token pair
+	tokenPair, err := s.issueTokenPair(user)
+	if err != nil {
+		log.Printf("Failed to issue token pair during signup: %v", err)
+		return bedrock.JSON(500, map[string]string{
+			"error": "failed to generate token",
+		})
+	}
+
+	return bedrock.JSON(201, SignupResponse{
+		Token:        tokenPair.Token,
+		IDToken:      tokenPair.IDToken,
+		RefreshToken: tokenPair.RefreshToken,
+		User:         tokenPair.User,
+		Account:      account,
+	})
 }
 
 // Register creates a new user account
